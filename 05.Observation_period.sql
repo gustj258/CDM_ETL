@@ -13,8 +13,8 @@ where a.person_id=b.person_id
 select *, row_number() over(partition by person_id order by observation_period_start_date, observation_period_end_date) AS id
 into observation_period_temp2
 from observation_period_temp1
-where observation_period_start_date < observation_period_end_date -- ��� ���� ������ �ڰ��� ���ܽ�Ű�� ����
---(12132529�� ���� ������ ����), 00:08
+where observation_period_start_date < observation_period_end_date -- -- 사망 이후 가지는 자격을 제외시키는 쿼리
+--(12132529개 행이 영향을 받음), 00:08
 
 
 -- step 3
@@ -27,7 +27,7 @@ select
 		on a.person_id = b.person_id
 			and a.id = cast(b.id as number)-1
 	order by person_id, id
---(12132529�� ���� ������ ����), 00:15
+--(12132529개 행이 영향을 받음), 00:15
 
 -- step 4
 select
@@ -37,7 +37,7 @@ select
    into #observation_period_temp4
    from #observation_period_temp3 a
    order by person_id, id
---(12132529�� ���� ������ ����), 00:12
+--(12132529개 행이 영향을 받음), 00:12
 
 
 -- step 5
@@ -50,7 +50,7 @@ INTO OBSERVATION_PERIOD @cohort_cdm
 from #observation_period_temp4
 group by person_id, sumday
 order by person_id, observation_period_start_date
---(1256091�� ���� ������ ����), 00:10
+--(1256091개 행이 영향을 받음), 00:10
 
 drop table #observation_period_temp1, #observation_period_temp2, #observation_period_temp3, #observation_period_temp4
 			case when x.mdcn_exec_freq is not null and isnumeric(x.mdcn_exec_freq)=1 and cast(x.mdcn_exec_freq as binary_double) > '0' then cast(x.mdcn_exec_freq as binary_double) else 1 end as mdcn_exec_freq,
