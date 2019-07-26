@@ -3,13 +3,13 @@
  --Author: 이성원
  --Date: 2017.01.20
  
- @bigdata : DB containing NHIS National Sample cohort DB
- @NHIS_JK: JK table in NHIS NSC
- @NHIS_20T: 20 table in NHIS NSC
- @NHIS_30T: 30 table in NHIS NSC
- @NHIS_40T: 40 table in NHIS NSC
- @NHIS_60T: 60 table in NHIS NSC
- @NHIS_GJ: GJ table in NHIS NSC
+ cohort_cdm : DB containing NHIS National Sample cohort DB
+ NHID_JK: JK table in NHIS NSC
+ NHID_20T: 20 table in NHIS NSC
+ NHID_30T: 30 table in NHIS NSC
+ NHID_40T: 40 table in NHIS NSC
+ NHID_60T: 60 table in NHIS NSC
+ NHID_GJ: GJ table in NHIS NSC
  --Description: Person 테이블 생성
 			   1) 표본코호트DB에는 person이 년도별로 중복 입력되어 있음. 사람들의 소득수준 변화지역이동, 설립구분의 변화등이 추적 가능함
 			      하지만, CDM에서는 1개의 person이 들어가야 하므로, 최근 person 데이터를 변환함
@@ -21,24 +21,24 @@
  1. 테이블 생성
 ***************************************/  
 CREATE TABLE cohort_cdm.PERSON (
-     person_id						NUMBER PRIMARY key , 
-     gender_concept_id				NUMBER NOT NULL , 
-     year_of_birth					NUMBER	NOT NULL , 
-     month_of_birth					NUMBER	NULL, 
-     day_of_birth					NUMBER NULL, 
-	 time_of_birth					VARCHAR2(50) NULL,
-     race_concept_id				NUMBER	NOT NULL, 
-     ethnicity_concept_id			NUMBER	NOT NULL, 
-     location_id					NUMBER NULL, 
-     provider_id					NUMBER NULL, 
-     care_site_id					NUMBER NULL, 
-     person_source_value			VARCHAR2(50) NULL, 
-     gender_source_value			VARCHAR2(50) NULL,
-	 gender_source_concept_id		NUMBER NULL, 
-     race_source_value				VARCHAR2(50) NULL, 
-	 race_source_concept_id			NUMBER NULL, 
-     ethnicity_source_value			VARCHAR2(50) NULL,
-	 ethnicity_source_concept_id	NUMBER NULL
+     person_id						INTEGER		PRIMARY key , 
+     gender_concept_id				INTEGER		NOT NULL , 
+     year_of_birth					INTEGER		NOT NULL , 
+     month_of_birth					INTEGER		NULL, 
+     day_of_birth					INTEGER		NULL, 
+	 time_of_birth					VARCHAR(50)	NULL,
+     race_concept_id				INTEGER		NOT NULL, 
+     ethnicity_concept_id			INTEGER		NOT NULL, 
+     location_id					integer		NULL, 
+     provider_id					INTEGER		NULL, 
+     care_site_id					INTEGER		NULL, 
+     person_source_value			VARCHAR(50) NULL, 
+     gender_source_value			VARCHAR(50) NULL,
+	 gender_source_concept_id		INTEGER		NULL, 
+     race_source_value				VARCHAR(50) NULL, 
+	 race_source_concept_id			INTEGER		NULL, 
+     ethnicity_source_value			VARCHAR(50) NULL,
+	 ethnicity_source_concept_id	INTEGER		NULL
 );
 
 
@@ -56,7 +56,7 @@ INSERT INTO cohort_cdm.PERSON
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
 	race_source_concept_id, ethnicity_source_value, ethnicity_source_concept_id)
-SELECT 
+select 
 	m.person_id as person_id,
 	case when o.sex=1 then 8507
 		 when o.sex=2 then 8532 end as gender_concept_id,
@@ -76,40 +76,46 @@ SELECT
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from bigdata.JK_ALL m,
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 	(select x.person_id, min(x.stnd_y) as stnd_y
-	from bigdata.JK_ALL x, (
+	from cohort_cdm.NHID_JK x, 
+        (
 	select person_id, max(age_group) as age_group
-	from (
+	from 
+            (
 		select distinct person_id, age_group
-		from bigdata.JK_ALL
-		where person_id in (
+		from cohort_cdm.NHID_JK
+		where person_id in 
+                (
 			select distinct person_id
-			from (
+			from 
+                    (
 				select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
-				from bigdata.JK_ALL
+				from cohort_cdm.NHID_JK
 				group by person_id, age_group
-			) a
+                    ) a
 			group by person_id
 			having count(person_id)>1
-		)
+                )
 		group by person_id, age_group
 		having count(age_group) = 5
-	) b
-	group by person_id) y
+            ) b
+	group by person_id
+        ) y
 	where x.person_id=y.person_id
 	and x.age_group=y.age_group
-	group by x.person_id, y.person_id, x.age_group, y.age_group) n, --추정포인트 조건에 맞는 person 목록 추출
+	group by x.person_id, y.person_id, x.age_group, y.age_group
+    ) n, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from bigdata.JK_ALL q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from bigdata.JK_ALL
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.PERSON_ID
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
 
 /**
 	2) 1개 이상 구간 + 5개 풀 구간 없음 + 0구간 포함
@@ -117,7 +123,8 @@ and m.person_id=o.person_id
 */
 INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
-	care_site_id, pertime_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,son_source_value, gender_source_value, gender_source_concept_id, race_source_value,
+	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
+	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
 	race_source_concept_id, ethnicity_source_value, ethnicity_source_concept_id)
 select 
 	m.person_id as person_id,
@@ -139,55 +146,63 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK m, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 	(select x.person_id, min(x.stnd_y) as stnd_y
-	from @bigdata.@NHIS_JK x, (
+	from cohort_cdm.NHID_JK x, 
+        (
 		select distinct person_id
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		where age_group=0
-		and person_id in (
+		and person_id in 
+            (
 		select person_id
-		from (
+		from 
+                (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
-		where person_id in (
+		from cohort_cdm.NHID_JK
+		where person_id in 
+                    (
 			select distinct person_id
-			from (
+			from
+                        (
 				select distinct person_id
-				from (
-					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+				from 
+                            (
+					select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
-				) a
+                            ) a
 				group by person_id
 				having count(person_id)>1
-			) b
+                        ) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
 			) 
-		)
+                    )
 		group by person_id, age_group
-		) x
+                ) x
 		group by x.person_id
 		having max(x.age_group_cnt) < 5
-		) ) y
+            ) 
+        ) y
 	where x.person_id=y.person_id
 	and x.age_group=0
-	group by x.person_id) n, --추정포인트 조건에 맞는 person 목록 추출
+	group by x.person_id
+    ) n, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.person_id
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
 
 
 /**
@@ -195,7 +210,7 @@ and m.person_id=o.person_id
 	: 총 76,594 건
 */
 -- 연속 구간 데이터
-INSERT INTO PERSONcohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
@@ -220,69 +235,69 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK d1, --출생년도 추정에 사용되는 person 데이터
 (select x.person_id, min(y.min_stnd_y) as stnd_y
 from 
-
-(
-select distinct m.person_id, m.age_group, min(m.stnd_y) as min_stnd_y, max(m.stnd_y) as max_stnd_y
-from @bigdata.@NHIS_JK m, 
-(select distinct person_id, min_age_group
-from (
+    (select distinct m.person_id, m.age_group, min(m.stnd_y) as min_stnd_y, max(m.stnd_y) as max_stnd_y
+from cohort_cdm.NHID_JK m, 
+        (select distinct person_id, min_age_group
+from        (
 	select person_id, min(age_group) as min_age_group
-	from (
+	from        (
 	select person_id, age_group, count(age_group) as age_group_cnt
-	from @bigdata.@NHIS_JK
-	where person_id in (
+	from cohort_cdm.NHID_JK
+	where person_id in 
+                    (
 		select distinct person_id
-		from (
+		from            (
 			select distinct person_id
-			from (
-				select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-				from @bigdata.@NHIS_JK
+			from            (
+				select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+				from cohort_cdm.NHID_JK
 				group by person_id, age_group
-			) a
+                            ) a
 			group by person_id
 			having count(person_id)>1
-		) b
+                        ) b
 		where b.person_id not in (
 			select person_id 
-			from @bigdata.@NHIS_JK
+			from cohort_cdm.NHID_JK
 			where person_id =b.person_id
 			group by person_id, age_group
 			having count(age_group) = 5
 		) 
-	)
+                    )
 	group by person_id, age_group
-	) x
+                ) x
 	group by x.person_id
 	having max(x.age_group_cnt) < 5
-) y
+            ) y
 where y.person_id not in (
 select distinct person_id
-from @bigdata.@JK_ALL
+from cohort_cdm.NHID_JK
 where person_id=y.person_id
-and age_group=0)) n
+and age_group=0)
+        ) n
 where m.person_id=n.person_id
 group by m.person_id, m.age_group
-) x,
+    ) x,
 
 (
 select distinct m.person_id, m.age_group, min(m.stnd_y) as min_stnd_y, max(m.stnd_y) as max_stnd_y
-from @bigdata.@NHIS_JK m, 
+from cohort_cdm.NHID_JK m, 
 (select distinct person_id, min_age_group
 from (
 	select person_id, min(age_group) as min_age_group
 	from (
 	select person_id, age_group, count(age_group) as age_group_cnt
-	from @bigdata.@NHIS_JK
+	from cohort_cdm.NHID_JK
 	where person_id in (
 		select distinct person_id
 		from (
 			select distinct person_id
 			from (
 				select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				group by person_id, age_group
 			) a
 			group by person_id
@@ -290,7 +305,7 @@ from (
 		) b
 		where b.person_id not in (
 			select person_id 
-			from @bigdata.@NHIS_JK
+			from cohort_cdm.NHID_JK
 			where person_id =b.person_id
 			group by person_id, age_group
 			having count(age_group) = 5
@@ -303,7 +318,7 @@ from (
 ) y
 where y.person_id not in (
 select distinct person_id
-from @bigdata.@NHIS_JK
+from cohort_cdm.NHID_JK
 where person_id=y.person_id
 and age_group=0)) n
 where m.person_id=n.person_id
@@ -314,17 +329,18 @@ where x.person_id=y.person_id
 and x.age_group + 1=y.age_group
 and x.max_stnd_y + 1=y.min_stnd_y
 
-group by x.person_id) d2, --추정포인트 조건에 맞는 person 목록 추출
+group by x.person_id
+) d2, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) d3 --최신 지역 데이터를 가져오기 위해 조인
 where d1.person_id=d2.person_id
 and d1.stnd_y=d2.stnd_y
-and d1.person_id=d3.person_id
+and d1.person_id=d3.person_id;
 
 
 /**
@@ -333,7 +349,7 @@ and d1.person_id=d3.person_id
 	: 총 2,862 건
 */
 -- 연속 구간 데이터
-INSERT INTO PERSON@cohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
@@ -358,49 +374,53 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK d1, --출생년도 추정에 사용되는 person 데이터
 	(
 	select s1.person_id, s1.age_group, min(s1.stnd_y) as stnd_y
-	from @bigdata.@NHIS_JK s1,
-	(
+	from cohort_cdm.NHID_JK s1,
+        (
 	select distinct person_id, max_age_group, min_age_group
-	from (
+	from 
+            (
 	select distinct person_id, max_age_group, min_age_group
-	from (
+	from        (
 		select person_id, max(age_group) as max_age_group, min(age_group) as min_age_group
-		from (
+		from        (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
-		where person_id in (
+		from cohort_cdm.NHID_JK
+		where person_id in 
+                        (
 			select distinct person_id
-			from (
+			from 
+                            (
 				select distinct person_id
-				from (
-					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+				from            (
+					select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
-				) a
+                                ) a
 				group by person_id
 				having count(person_id)>1
-			) b
+                            ) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
 			) 
-		)
+                        )
 		group by person_id, age_group
-		) x
+                    ) x
 		group by x.person_id
 		having max(x.age_group_cnt) < 5
-	) y
+                ) y
 	where y.person_id not in (
 	select distinct person_id
-	from @bigdata.@NHIS_JK
+	from cohort_cdm.NHID_JK
 	where person_id=y.person_id
-	and age_group=0)) x
+	and age_group=0)
+            ) x
 	where person_id not in (
 
 
@@ -410,20 +430,20 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 
 	(
 	select distinct m.person_id, m.age_group, min(m.stnd_y) as min_stnd_y, max(m.stnd_y) as max_stnd_y
-	from @bigdata.@NHIS_JK m, 
+	from cohort_cdm.NHID_JK m, 
 	(select distinct person_id, min_age_group
 	from (
 		select person_id, min(age_group) as min_age_group
 		from (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		where person_id in (
 			select distinct person_id
 			from (
 				select distinct person_id
 				from (
 					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
 				) a
 				group by person_id
@@ -431,7 +451,7 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 			) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
@@ -444,7 +464,7 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 	) y
 	where y.person_id not in (
 	select distinct person_id
-	from @bigdata.@NHIS_JK
+	from cohort_cdm.NHID_JK
 	where person_id=y.person_id
 	and age_group=0)) n
 	where m.person_id=n.person_id
@@ -453,20 +473,20 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 
 	(
 	select distinct m.person_id, m.age_group, min(m.stnd_y) as min_stnd_y, max(m.stnd_y) as max_stnd_y
-	from @bigdata.@NHIS_JK m, 
+	from cohort_cdm.NHID_JK m, 
 	(select distinct person_id, min_age_group
 	from (
 		select person_id, min(age_group) as min_age_group
 		from (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		where person_id in (
 			select distinct person_id
 			from (
 				select distinct person_id
 				from (
 					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
 				) a
 				group by person_id
@@ -474,7 +494,7 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 			) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
@@ -487,7 +507,7 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 	) y
 	where y.person_id not in (
 	select distinct person_id
-	from @bigdata.@NHIS_JK
+	from cohort_cdm.NHID_JK
 	where person_id=y.person_id
 	and age_group=0)) n
 	where m.person_id=n.person_id
@@ -498,23 +518,23 @@ from @bigdata.@NHIS_JK d1, --출생년도 추정에 사용되는 person 데이�
 	and x.age_group + 1=y.age_group
 	and x.max_stnd_y + 1=y.min_stnd_y
 	)
-	) s2
+        ) s2
 	where s1.person_id=s2.person_id
 	and s1.age_group=s2.min_age_group
 	group by s1.person_id, s1.age_group
 	) d2, --추정포인트 조건에 맞는 person 목록 추출
 
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) d3 --최신 지역 데이터를 가져오기 위해 조인
 
 where d1.person_id=d2.person_id
 and d1.stnd_y=d2.stnd_y
-and d1.person_id=d3.person_id
+and d1.person_id=d3.person_id;
 
 
 
@@ -523,7 +543,7 @@ and d1.person_id=d3.person_id
 		: 맥스 구간이 최고령 구간대가 아닌 데이터가 236건
 		: 동일하게 맥스 구간의 min(stnd_y)를 기준으로 출생년도 추정
 */
-INSERT INTO PERSON@cohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
@@ -548,63 +568,67 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK m, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 	(select x.person_id, min(stnd_y) as stnd_y
-	from @bigdata.@NHIS_JK x, (
+	from cohort_cdm.NHID_JK x, 
+        (
 		select distinct person_id, age_group
 		from (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
-		where person_id in (
+		from cohort_cdm.NHID_JK
+		where person_id in 
+                (
 			select distinct person_id
-			from (
+			from 
+                    (
 				select distinct person_id
-				from (
-					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+				from 
+                        (
+					select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
-				) a
+                        ) a
 				group by person_id
 				having count(person_id)>1
-			) b
+                    ) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
 			) 
-		)
+                )
 		group by person_id, age_group
-		) x
+            ) x
 		group by x.person_id, age_group
 		having max(x.age_group_cnt) > 5
-	) y
+        ) y
 	where x.PERSON_ID=y.PERSON_ID
 	and x.age_group=y.age_group
 	group by x.person_id, x.age_group
 	) n, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.person_id
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
 
 
 /**
 	5) 1개 구간 + 5개 풀 구간임
 	: 2002년에 최고령 구간에 포함되어 5년째 사망한 사람 데이터 있음. 정확한 추정 불가능
 */
-INSERT INTO PERSON@cohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
-	race_source_concept_id, ethnicity_source_value, ethnicity_source_concept_id)
+	race_source_concept_id, ethnicity_source_value, ethnicity_source_concept_id)    
 select 
 	m.person_id as person_id,
 	case when o.sex=1 then 8507
@@ -625,38 +649,44 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK m, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 (select person_id, age_group, min(stnd_y) as stnd_y
-from @bigdata.@NHIS_JK
-where person_id in (
+from cohort_cdm.NHID_JK
+where person_id in 
+    (
 	select distinct person_id
-	from (
-		select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-		from @bigdata.@NHIS_JK
+	from 
+        (
+		select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+		from cohort_cdm.NHID_JK
 		group by person_id, age_group
-	) a
+        ) a
 	group by person_id
 	having count(person_id)=1
-)
+    )
 group by person_id, age_group
-having count(age_group) = 5) n, --추정포인트 조건에 맞는 person 목록 추출
+having count(age_group) = 5
+) n, --추정포인트 조건에 맞는 person 목록 추출
 (select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, 
+    (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
-		group by person_id) w
+		from cohort_cdm.NHID_JK
+		group by person_id
+    ) w
 	where q.person_id=w.person_id
-	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
+	and q.stnd_y=w.stnd_y
+) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.person_id
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
 
 
 /**
 	6) 1개 구간 + 5개 풀 구간 아님 + 0구간 포함
 	: 0 구간 데이터가 2개인 데이터 1건 있음
 */
-INSERT INTO PERSON@cohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
@@ -681,51 +711,57 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK m, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 	(select person_id, min(stnd_y) as stnd_y
-	from @bigdata.@NHIS_JK
+	from cohort_cdm.NHID_JK
 	where age_group=0
-	and person_id in (
+	and person_id in 
+        (
 	select person_id
-	from (
+	from 
+            (
 	select person_id, age_group, count(age_group) as age_group_cnt
-	from @bigdata.@NHIS_JK
-	where person_id in (
+	from cohort_cdm.NHID_JK
+	where person_id in 
+                (
 		select distinct person_id
-		from (
+		from 
+                    (
 			select distinct person_id
-			from (
-				select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-				from @bigdata.@NHIS_JK
+			from 
+                        (
+				select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+				from cohort_cdm.NHID_JK
 				group by person_id, age_group
-			) a
+                        ) a
 			group by person_id
 			having count(person_id)=1
-		) b
+                    ) b
 		where b.person_id not in (
 			select person_id 
-			from @bigdata.@NHIS_JK
+			from cohort_cdm.NHID_JK
 			where person_id =b.person_id
 			group by person_id, age_group
 			having count(age_group) = 5
 		) 
-	)
+                )
 	group by person_id, age_group
-	) x
+            ) x
 	group by x.person_id
 	having max(x.age_group_cnt) < 5
-	) 
-	group by person_id) n, --추정포인트 조건에 맞는 person 목록 추출
+        ) 
+	group by person_id
+    ) n, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.person_id
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
 
 
 /**
@@ -733,7 +769,7 @@ and m.person_id=o.person_id
 	: 정확한 추정 불가
 	: 구간 시작 년도에 구간대의 최소값을 갖도록 추정함 (예: 2002년에 20~24세 구간이면, 2002년에 22세로 추정)
 */
-INSERT INTO PERSON@cohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
@@ -758,58 +794,64 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK m, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 	(select x.person_id, x.age_group, min(x.stnd_y) as stnd_y
-	from @bigdata.@NHIS_JK x,
-	(select person_id, age_group
+	from cohort_cdm.NHID_JK x,
+        (select person_id, age_group
 	from (
 		select person_id, min(age_group) as age_group
-		from (
+		from 
+            (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
-		where person_id in (												
+		from cohort_cdm.NHID_JK
+		where person_id in 
+                (												
 			select distinct person_id
-			from (
+			from 
+                    (
 				select distinct person_id
-				from (
-					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+				from 
+                        (
+					select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
-				) a
+                        ) a
 				group by person_id
 				having count(person_id)=1
-			) b
+                    ) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
 			) 
-		)
+                )
 		group by person_id, age_group
-		) x
+            ) x
 		group by x.person_id
 		having max(x.age_group_cnt) < 5
-	) y					
+        ) y					
 	where y.person_id not in (
 	select distinct person_id
-	from @bigdata.@NHIS_JK
+	from cohort_cdm.NHID_JK
 	where person_id=y.person_id
-	and age_group=0)) y
+	and age_group=0)
+        ) y
 	where x.person_id=y.person_id
 	and x.age_group=y.age_group
-	group by x.person_id, x.age_group) n, --추정포인트 조건에 맞는 person 목록 추출
+	group by x.person_id, x.age_group
+    ) n, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.person_id
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
 
 
 /**
@@ -817,7 +859,7 @@ and m.person_id=o.person_id
 	: 정확한 추정 불가
 	: 구간 시작 년도에 구간대의 중간값을 갖도록 추정함 (예: 2002년에 20~24세 구간이면, 2002년에 22세로 추정)
 */
-INSERT INTO PERSON @cohort_cdm
+INSERT INTO cohort_cdm.PERSON
 	(person_id, gender_concept_id, year_of_birth, month_of_birth, day_of_birth,
 	time_of_birth, race_concept_id, ethnicity_concept_id, location_id, provider_id,
 	care_site_id, person_source_value, gender_source_value, gender_source_concept_id, race_source_value,
@@ -842,46 +884,51 @@ select
 	null as race_source_concept_id,
 	null as ethnicity_source_value,
 	null as ethnicity_source_concept_id
-from @bigdata.@NHIS_JK m, --출생년도 추정에 사용되는 person 데이터
+from cohort_cdm.NHID_JK m, --출생년도 추정에 사용되는 person 데이터
 	(select m.person_id, min(m.age_group) as age_group, min(m.stnd_y) as stnd_y
-	from @bigdata.@NHIS_JK m,
+	from cohort_cdm.NHID_JK m,
 		(select distinct person_id
 		from (
 		select person_id, age_group, count(age_group) as age_group_cnt
-		from @bigdata.@NHIS_JK
-		where person_id in (
+		from cohort_cdm.NHID_JK
+		where person_id in 
+                (
 			select distinct person_id
-			from (
+			from 
+                    (
 				select distinct person_id
-				from (
-					select person_id, age_group, count(age_group) as age_group_cnt, min(year) as min_year, max(year) as max_year
-					from @bigdata.@NHIS_JK
+				from 
+                        (
+					select person_id, age_group, count(age_group) as age_group_cnt, min(stnd_y) as min_year, max(stnd_y) as max_year
+					from cohort_cdm.NHID_JK
 					group by person_id, age_group
-				) a
+                        ) a
 				group by person_id
 				having count(person_id)=1
-			) b
+                    ) b
 			where b.person_id not in (
 				select person_id 
-				from @bigdata.@NHIS_JK
+				from cohort_cdm.NHID_JK
 				where person_id =b.person_id
 				group by person_id, age_group
 				having count(age_group) = 5
 			) 
-		)
+                )
 		group by person_id, age_group
-		) x
+            ) x
 		group by x.person_id
-		having max(x.age_group_cnt) > 5) n
+		having max(x.age_group_cnt) > 5
+        ) n
 	where m.person_id=n.person_id
-	group by m.person_id) n, --추정포인트 조건에 맞는 person 목록 추출
+	group by m.person_id
+    ) n, --추정포인트 조건에 맞는 person 목록 추출
 	(select w.person_id, w.stnd_y, q.sex, q.sgg
-	from @bigdata.@NHIS_JK q, (
+	from cohort_cdm.NHID_JK q, (
 		select person_id, max(stnd_y) as stnd_y
-		from @bigdata.@NHIS_JK
+		from cohort_cdm.NHID_JK
 		group by person_id) w
 	where q.person_id=w.person_id
 	and q.stnd_y=w.stnd_y) o --최신 지역 데이터를 가져오기 위해 조인
 where m.person_id=n.person_id
 and m.stnd_y=n.stnd_y
-and m.person_id=o.person_id
+and m.person_id=o.person_id;
