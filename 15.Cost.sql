@@ -1,20 +1,20 @@
 /**************************************
  --encoding : UTF-8
- --Author: 이성원
- --Date: 2017.02.08
+ --Author:고인석, 
+ --Date: 2019.09.30
  
-@bigdata : DB containing NHIS National Sample cohort DB
-@cohort_cdm : DB for NHIS-NSC in CDM format
-@NHIS_JK: JK table in NHIS NSC
-@NHIS_20T: 20 table in NHIS NSC
-@NHIS_30T: 30 table in NHIS NSC
-@NHIS_40T: 40 table in NHIS NSC
-@NHIS_60T: 60 table in NHIS NSC
-@NHIS_GJ: GJ table in NHIS NSC
-@CONDITION_MAPPINGTABLE : mapping table between KCD and OMOP vocabulary
-@DRUG_MAPPINGTABLE : mapping table between EDI and OMOP vocabulary
-@PROCEDURE_MAPPINGTABLE : mapping table between Korean procedure and OMOP vocabulary
-@DEVICE_MAPPINGTABLE : mapping table between EDI and OMOP vocabulary
+cohort_cdm : DB containing NHIS National Sample cohort DB
+cohort_cdm : DB for NHIS-NSC in CDM format
+NHID_JK: JK table in NHIS NSC
+NHID_20T: 20 table in NHIS NSC
+NHID_30T: 30 table in NHIS NSC
+NHID_40T: 40 table in NHIS NSC
+NHID_60T: 60 table in NHIS NSC
+NHID_GJ: GJ table in NHIS NSC
+CONDITION_MAPPINGTABLE : mapping table between KCD and OMOP vocabulary
+DRUG_MAPPINGTABLE : mapping table between EDI and OMOP vocabulary
+PROCEDURE_MAPPINGTABLE : mapping table between Korean procedure and OMOP vocabulary
+DEVICE_MAPPINGTABLE : mapping table between EDI and OMOP vocabulary
  
  --Description: Cost 테이블 생성
  --Generating Table: COST
@@ -24,30 +24,57 @@
  1. 테이블 생성
 ***************************************/ 
 CREATE TABLE cohort_cdm.COST (
-	cost_id	number
-    CONSTRAINT COST_device_cost_id PRIMARY KEY,
-	cost_event_id	 number not null,
-	cost_domain_id	varchar2(20) not null,
-	cost_type_concept_id	number not null,
-	currency_concept_id	number,
-	total_charge	binary_double,
-	total_cost	binary_double,
-	total_paid	binary_double,
-	paid_by_payer	binary_double,
-	paid_by_patient	binary_double,
-	paid_patient_copay	binary_double,
-	paid_patient_coinsurance	binary_double,
-	paid_patient_deductiable	binary_double,
-	paid_by_primary	binary_double,
-	paid_ingredient_cost	binary_double,
-	paid_dispensing_fee	binary_double,
-	payer_plan_period_id	number,
-	amount_allowed	binary_double,
-	revenue_code_concept_id	number,
-	drg_concept_id	number,
-	revenue_code_source_value	varchar2(50),
-	drg_source_value	varchar2(50)
+	cost_id	bigint	primary key,
+	cost_event_id	NUMBER	not null,
+	cost_domain_id	varchar(20)	not null,
+	cost_type_concept_id	integer	not null,
+	currency_concept_id	integer,
+	total_charge	float,
+	total_cost	float,
+	total_paid	float,
+	paid_by_payer	float,
+	paid_by_patient	float,
+	paid_patient_copay	float,
+	paid_patient_coinsurance	float,
+	paid_patient_deductiable	float,
+	paid_by_primary	float,
+	paid_ingredient_cost	float,
+	paid_dispensing_fee	float,
+	payer_plan_period_id	NUMBER,
+	amount_allowed	float,
+	revenue_code_concept_id	integer,
+	drg_concept_id	integer,
+	revenue_code_source_value	varchar(50),
+	drg_source_value	varchar(50)
 );
+
+create global temporary table cohort_cdm.COST
+(
+    cost_id	bigint	primary key,
+	cost_event_id	NUMBER	not null,
+	cost_domain_id	varchar(20)	not null,
+	cost_type_concept_id	integer	not null,
+	currency_concept_id	integer,
+	total_charge	float,
+	total_cost	float,
+	total_paid	float,
+	paid_by_payer	float,
+	paid_by_patient	float,
+	paid_patient_copay	float,
+	paid_patient_coinsurance	float,
+	paid_patient_deductiable	float,
+	paid_by_primary	float,
+	paid_ingredient_cost	float,
+	paid_dispensing_fee	float,
+	payer_plan_period_id	NUMBER,
+	amount_allowed	float,
+	revenue_code_concept_id	integer,
+	drg_concept_id	integer,
+	revenue_code_source_value	varchar(50),
+	drg_source_value	varchar(50)
+)
+on commit preserve rows; 
+
 
 /**************************************
  2. 데이터 입력
@@ -83,13 +110,13 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	convert(bigint, to_char (a.person_id) + substr(to_char (visit_start_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_number(to_char(a.person_id) || left(to_char(visit_start_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
 	null as revenue_code_source_value,
 	b.dmd_drg_no as drg_source_value
-from visit_occurrence a, bigdata.NHIS_20T b
+from visit_occurrence a, cohort_cdm.NHID_20T b
 where a.visit_occurrence_id=b.key_seq
 and a.person_id=b.person_id;
 
@@ -123,7 +150,7 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	convert(bigint, to_char (b.person_id) + substr(to_char (a.drug_exposure_start_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_number(to_char(b.person_id) || left(to_char(a.drug_exposure_start_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
@@ -133,11 +160,11 @@ from (select person_id, drug_exposure_id, drug_exposure_start_date
 	from drug_exposure
 	where drug_type_concept_id=38000180) a, 
 	(select m.master_seq, m.key_seq, m.seq_no, m.person_id, n.amt
-	from seq_master m, bigdata.NHIS_30T n
+	from seq_master m, cohort_cdm.NHID_30T n
 	where m.source_table='130'
 	and m.key_seq=n.key_seq
 	and m.seq_no=n.seq_no) b
-where substr(a.drug_exposure_id, 1, 10)=b.master_seq
+where left(a.drug_exposure_id, 10)=b.master_seq
 and a.person_id=b.person_id;
 
 
@@ -165,7 +192,7 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	convert(bigint, to_char (b.person_id) + substr(to_char (a.drug_exposure_start_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_number(to_char(b.person_id) || left(to_char(a.drug_exposure_start_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
@@ -176,10 +203,10 @@ from (select person_id, drug_exposure_id, drug_exposure_start_date
 	where drug_type_concept_id=38000177) a, 
 	(select m.master_seq, m.key_seq, m.seq_no, m.person_id, n.amt
 	from (select master_seq, key_seq, seq_no, person_id from seq_master where source_table='160') m, 
-	bigdata.NHIS_60T n
+	cohort_cdm.NHID_60T n
 	where m.key_seq=n.key_seq
 	and m.seq_no=n.seq_no) b
-where b.master_seq=substr(a.drug_exposure_id, 1, 10)
+where b.master_seq=left(a.drug_exposure_id, 10)
 and a.person_id=b.person_id;
 
 
@@ -211,7 +238,7 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	convert(bigint, to_char (b.person_id) + substr(to_char (a.procedure_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_NUMBER(to_char(b.person_id) || left(to_char(a.procedure_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
@@ -219,11 +246,11 @@ SELECT
 	null as drg_source_value
 from procedure_occurrence a, 
 	(select m.master_seq, m.key_seq, m.seq_no, m.person_id, n.amt
-	from seq_master m, bigdata.NHIS_30T n
+	from seq_master m, cohort_cdm.NHID_30T n
 	where m.source_table='130'
 	and m.key_seq=n.key_seq
 	and m.seq_no=n.seq_no) b
-where substr(a.procedure_occurrence_id, 1, 10)=b.master_seq
+where left(a.procedure_occurrence_id, 10)=b.master_seq
 and a.person_id=b.person_id;
 
 
@@ -251,7 +278,7 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	convert(bigint, to_char (b.person_id) + substr(to_char (a.procedure_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_number(to_char(b.person_id) || left(to_char(a.procedure_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
@@ -260,10 +287,10 @@ SELECT
 from procedure_occurrence a, 
 	(select m.master_seq, m.key_seq, m.seq_no, m.person_id, n.amt
 	from (select master_seq, key_seq, seq_no, person_id from seq_master where source_table='160') m, 
-	bigdata.NHIS_60T n
+	cohort_cdm.NHID_60T n
 	where m.key_seq=n.key_seq
 	and m.seq_no=n.seq_no) b
-where substr(a.procedure_occurrence_id, 1, 10)=b.master_seq
+where left(a.procedure_occurrence_id, 10)=b.master_seq
 and a.person_id=b.person_id;
 
 
@@ -295,21 +322,21 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	to_number(to_char (b.person_id) + substr(to_char (a.device_exposure_start_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_number(to_char(b.person_id) || left(to_char(a.device_exposure_start_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
 	null as revenue_code_source_value,
 	null as drg_source_value
-    from (select device_exposure_id, person_id, device_exposure_start_date
+from (select device_exposure_id, person_id, device_exposure_start_date
 	from device_exposure 
 	where device_source_value not in (select sourcecode from procedure_EDI_mapped_20161007)) a, 
 	(select m.master_seq, m.key_seq, m.seq_no, m.person_id, n.amt
-	from seq_master m, bigdata.NHIS_30T n
+	from seq_master m, cohort_cdm.NHID_30T n
 	where m.source_table='130'
 	and m.key_seq=n.key_seq
 	and m.seq_no=n.seq_no) b
-where substr(a.device_exposure_id, 1, 10)=b.master_seq
+where left(a.device_exposure_id, 10)=b.master_seq
 and a.person_id=b.person_id;
 
 
@@ -337,30 +364,19 @@ SELECT
 	null as paid_by_primary,
 	null as paid_ingredient_cost,
 	null as paid_dispensing_fee,
-	to_number(to_char (b.person_id) + substr(to_char (a.device_exposure_start_date, 112), 1, 4)) FROM dual as payer_plan_period_id,
+	to_number(to_char( b.person_id) || left(to_char(a.device_exposure_start_date, 112), 4)) as payer_plan_period_id,
 	null as amount_allowed,
 	null as revenue_code_concept_id,
 	null as drg_concept_id,
 	null as revenue_code_source_value,
 	null as drg_source_value
-    from (select device_exposure_id, person_id, device_exposure_start_date
+from (select device_exposure_id, person_id, device_exposure_start_date
 	from device_exposure 
 	where device_source_value not in (select sourcecode from procedure_EDI_mapped_20161007)) a,  
 	(select m.master_seq, m.key_seq, m.seq_no, m.person_id, n.amt
 	from (select master_seq, key_seq, seq_no, person_id from seq_master where source_table='160') m, 
-	bigdata.NHIS_60T n
+	cohort_cdm.NHID_60T n
 	where m.key_seq=n.key_seq
 	and m.seq_no=n.seq_no) b
-where substr(a.device_exposure_id, 1, 10)=b.master_seq
+where left(a.device_exposure_id, 10)=b.master_seq
 and a.person_id=b.person_id;
-
-
-
-
-
-
-
-
-
-
-
