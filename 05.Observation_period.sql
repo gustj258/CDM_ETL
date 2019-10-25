@@ -1,100 +1,111 @@
- select 
-      a.person_id as person_id,  case when a.stnd_y >= b.year_of_birth then TO_DATE(to_char(a.stnd_y)|| '0101',112) from dual 
-            else to_Date(to_char(b.year_of_birth) || '0101', 112) 
-      end as observation_period_start_date, 
-      case when convert(date, a.stnd_y + '1231', 112) > c.death_date then c.death_date
-            else convert(date, a.stnd_y + '1231', 112)
-      end as observation_period_end_date
-into observation_period_temp1
-from BIGDATA.jk_all a,
+/**************************************
+ --encoding : UTF-8
+ --Author: 고인석,박현서
+ --Date: 2019.08.17
+ 
+ cohort_cdm : DB containing NHIS National Sample cohort DB
+ NHID_JK: JK table in NHIS NSC
+ NHID_20T: 20 table in NHIS NSC
+ NHID_30T: 30 table in NHIS NSC
+ NHID_40T: 40 table in NHIS NSC
+ NHID_60T: 60 table in NHIS NSC
+ NHID_GJ: GJ table in NHIS NSC
+ --Description: Observation_period 테이블 생성
+ --Generating Table: OBSERVATION_PERIOD
+***************************************/
+
+/**************************************
+ 1. 데이터 입력
+    1) 관측시작일: 자격년도.01.01이 디폴트. 출생년도가 그 이전이면 출생년도.01.01
+	2) 관측종료일: 자격년도.12.31이 디폴트. 사망년월이 그 이후면 사망년.월.마지막날
+	3) 사망 이후 가지는 자격 제외
+***************************************/ 
+
+
+
+
+-- step 1
+create global temporary table observation_period_temp1
+(
+KCDCODE VARCHAR(20),
+NAME varchar(255),
+CONCEPT_ID INTEGER, 
+CONCEPT_NAME VARCHAR(255)
+)
+on commit preserve rows;
+
+
+create table observation_period_temp1 as 
+select
+      a.person_id as person_id, 
+      case when a.stnd_y >= b.year_of_birth then to_date(a.stnd_y || '0101', 'yyyymmdd') 
+            else to_date(b.year_of_birth || '0101', 'yyyymmdd') 
+      end as observation_period_start_date, --관측시작일
+      case when to_date(a.stnd_y || '1231', 'yyyymmdd') > c.death_date then c.death_date
+            else to_date(a.stnd_y || '1231', 'yyyymmdd')
+      end as observation_period_end_date --관측종료일
+from cohort_cdm.NHID_JK a,
       cohort_cdm.person b left join cohort_cdm.death c
       on b.person_id=c.person_id
-where a.person_id=b.person_id
-select *, row_number() over(partition by person_id order by observation_period_start_date, observation_period_end_date) AS id
-into observation_period_temp2
-from observation_period_temp1
-where observation_period_start_date < observation_period_end_date -- -- 사망 이후 가지는 자격을 제외시키는 쿼리
+where a.person_id=b.person_id;
+--(12132633개 행이 영향을 받음), 00:05
+
+create global temporary table observation_period_temp2
+(
+observation_period_start_date VARCHAR(255),
+observation_period_end_date varchar(255)
+)
+on commit preserve rows;
+
+-- step 2
+create table observation_period_temp2 as
+SELECT ROW_NUMBER() OVER(PARTITION BY PERSON_ID ORDER BY OBSERVATION_PERIOD_START_DATE, OBSERVATION_PERIOD_END_DATE) AS NUM, *, AS ID  -- 이부분을 fix
+FROM OBSERVATION_PERIOD_TEMP1
+WHERE OBSERVATION_PERIOD_START_DATE < OBSERVATION_PERIOD_END_DATE; -- 사망 이후 가지는 자격을 제외시키는 쿼리
 --(12132529개 행이 영향을 받음), 00:08
 
-
 -- step 3
-select 
-	a.*, b.observation_period_start_date - a.observation_period_end_date as days
-	into observation_period_temp3
+create table observation_period_temp3 as
+select a.*, datediff(day, a.observation_period_end_date, b.observation_period_start_date) as days
 	from observation_period_temp2 a
 		left join
-        observation_period_temp2 b
+		observation_period_temp2 b
 		on a.person_id = b.person_id
-			and a.id = cast(b.id as number)-1
-	order by person_id, id
+			and a.id = to_date(b.id, as number)-1
+	order by person_id, id;
 --(12132529개 행이 영향을 받음), 00:15
 
+create global temporary table observation_period_temp4
+(
+person_id VARCHAR(20),
+sumday varchar(255),
+CONCEPT_ID INTEGER, 
+CONCEPT_NAME VARCHAR(255)
+)
+on commit preserve rows;
+
+
 -- step 4
+create table observation_period_temp4 as
 select
 	a.*, CASE WHEN id=1 THEN 1
-   ELSE SUM(CASE WHEN DAYS>1 THEN 1 ELSE 0 END) OVER from dual(PARTITION BY person_id ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)+1
+   ELSE SUM(CASE WHEN DAYS>1 THEN 1 ELSE 0 END) OVER(PARTITION BY person_id ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)||1
    END AS sumday
-   into #observation_period_temp4
-   from #observation_period_temp3 a
-   order by person_id, id
+   from observation_period_temp3 a
+   order by person_id, id;
 --(12132529개 행이 영향을 받음), 00:12
 
 
 -- step 5
-select rownumint, 1, 1) from dual as observation_period_id,
+create table cohort_cdm.OBSERVATION_PERIOD as
+select identity(int, 1, 1) as observation_period_id,
 	person_id,
 	min(observation_period_start_date) as observation_period_start_date,
 	max(observation_period_end_date) as observation_period_end_date,
 	44814725 as PERIOD_TYPE_CONCEPT_ID
-INTO OBSERVATION_PERIOD @cohort_cdm
-from #observation_period_temp4
+from observation_period_temp4
 group by person_id, sumday
-order by person_id, observation_period_start_date
+order by person_id, observation_period_start_date;
 --(1256091개 행이 영향을 받음), 00:10
 
-drop table #observation_period_temp1, #observation_period_temp2, #observation_period_temp3, #observation_period_temp4
-			case when x.mdcn_exec_freq is not null and isnumeric(x.mdcn_exec_freq)=1 and cast(x.mdcn_exec_freq as binary_double) > '0' then cast(x.mdcn_exec_freq as binary_double) else 1 end as mdcn_exec_freq,
-			case when x.dd_mqty_freq is not null and isnumeric(x.dd_mqty_freq)=1 and cast(x.dd_mqty_freq as binary_double) > '0' then cast(x.dd_mqty_freq as binary_double) else 1 end as dd_mqty_freq,
-			case when x.dd_exec_freq is not null and isnumeric(x.dd_exec_freq)=1 and cast(x.dd_exec_freq as binary_double) > '0' then cast(x.dd_exec_freq as binary_double) else 1 end as dd_exec_freq,
-			y.master_seq, y.person_id			
-	FROM @bigdata.@NHIS_60T x, 
-	     (select master_seq, person_id, key_seq, seq_no from seq_master where source_Table='160') y
-	WHERE x.key_seq=y.key_seq
-	AND x.seq_no=y.seq_no) a,
-	@cohort_cdm.@DRUG_MAPPINGTABLE b
-where a.div_cd=b.source_code
-
-
-
-/**************************************
- 5. drug_start_date가 사망일자 이전인 데이터 삭제
-    총 1,042 건
-***************************************/
-delete from a
-from drug_exposure a, death b
-where a.person_id=b.person_id
-and b.death_date < a.drug_exposure_start_date
-
-
-
-/**************************************
- 6. drug_end_date가 사장일자 이전인 데이터의 drug_end_date를 사망일자로 변경
-    총 39,186 건
-***************************************/
-update a
-set drug_exposure_end_date=b.death_date
-from drug_exposure a, death b
-where a.person_id=b.person_id
-and (b.death_date < a.drug_exposure_start_date
-or b.death_date < a.drug_exposure_end_date)
-
-
--------------------------------------------
-참고) http://tennesseewaltz.tistory.com/236
-UPDATE A
-      SET A.SEQ     = B.CMT_NO
-        , A.CarType = B.CAR_TYPE
-     FROM TABLE_AAA A
-          JOIN TABLE_BBB B ON A.OPCode = B.OP_CODE
-    WHERE A.LineCode = '조건'
--------------------------------------------
+drop table observation_period_temp1, observation_period_temp2, observation_period_temp3, observation_period_temp4, cohort_cdm.OBSERVATION_PERIOD;
