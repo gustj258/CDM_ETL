@@ -1,15 +1,15 @@
 /**************************************
- --encoding : UTF-8
- --Author: 이성원
- --Date: 2017.01.18
+ --Oracle version: Oracle Database 11g Enterprise Edition Release 11.2.0.4.0 - 64bit Production
+ --Author: 고인석,
+ --Date: 2019.08.09
  
- @bigdata : DB containing NHIS National Sample cohort DB
- @NHIS_JK: JK table in NHIS NSC
- @NHIS_20T: 20 table in NHIS NSC
- @NHIS_30T: 30 table in NHIS NSC
- @NHIS_40T: 40 table in NHIS NSC
- @NHIS_60T: 60 table in NHIS NSC
- @NHIS_GJ: GJ table in NHIS NSC
+ @NHID : DB containing NHID National Sample cohort DB
+ @NHID_JK: JK table in NHID NSC
+ @NHID_20T: 20 table in NHID NSC
+ @NHID_30T: 30 table in NHID NSC
+ @NHID_40T: 40 table in NHID NSC
+ @NHID_60T: 60 table in NHID NSC
+ @NHID_GJ: GJ table in NHID NSC
  
  --Description: Care_site 테이블 생성
 			   1) 표본코호트DB에는 요양기관이 년도별로 중복 입력되어 있음. 지역이동, 설립구분의 변화등이 추적 가능함
@@ -21,14 +21,13 @@
 /**************************************
  1. 테이블 생성
 ***************************************/  
-Create table cohort_cdm.CARE_SITE (
-	care_site_id 	NUMBER 
-    CONSTRAINT CARE_SITE_care_site_id PRIMARY KEY,
-	care_site_name	varchar2(255),
-	place_of_service_concept_id	number,
-	location_id	number,
-	care_site_source_value	varchar2(50),
-	place_of_service_source_value	varchar2(50)
+Create table CARE_SITE (
+	care_site_id 	integer primary key,
+	care_site_name	varchar(255),
+	place_of_service_concept_id	integer,
+	location_id	integer,
+	care_site_source_value	varchar(50),
+	place_of_service_source_value	varchar(50)
 );
 
 /**************************************
@@ -36,7 +35,7 @@ Create table cohort_cdm.CARE_SITE (
 	: place_of_service_source_value - 요양기관종별코드/요양기관설립구분
 									- 요양기관설립구분이 1자리 숫자인 경우, 앞에 0을 붙여줌
 ***************************************/  
-INSERT INTO cohort_cdm.care_site
+INSERT INTO CARE_SITE
 SELECT a.ykiho_id,
 	null as care_site_name,
 	case when a.ykiho_gubun_cd='10' then 4068130 --종합병원(Tertiary care hospital) 
@@ -60,9 +59,9 @@ SELECT a.ykiho_id,
 	end as place_of_service_concept_id,
 	a.ykiho_sido as location_id,
 	a.ykiho_id as care_site_source_value,
-	(a.ykiho_gubun_cd || '/' || (case when length(rtrim(a.org_type)) = 1 then '0' + org_type else org_type end)) as place_of_service_source_value
-FROM bigdata.NHID_YK a, (select ykiho_id, max(stnd_y) as max_stnd_y
-	from bigdata.NHID_YK c
-	group by ykiho_id) b
+	a.ykiho_gubun_cd||'/'||(case when length(to_number(a.org_type)) = 1 then '0' else org_type end)||org_type as place_of_service_source_value
+FROM cohort_cdm.NHID_YK a, (select ykiho_id, max(stnd_y) as max_stnd_y
+from cohort_cdm.NHID_YK c
+group by ykiho_id) b
 where a.ykiho_id=b.ykiho_id
-and a.stnd_y=b.max_stnd_y ;
+and a.stnd_y=b.max_stnd_y;
