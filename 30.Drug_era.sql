@@ -2,8 +2,8 @@
  --encoding : UTF-8
  --Author: OHDSI
   
-@NHISDatabaseSchema : DB containing NHIS National Sample cohort DB
-@cohort_cdm : DB for NHIS-NSC in CDM format
+cohort_cdm : DB containing NHIS National Sample cohort DB
+cohort_cdm : DB for NHIS-NSC in CDM format
  
  --Description: OHDSI에서 생성한 drug_era 생성 쿼리
  --Generating Table: DRUG_ERA
@@ -13,39 +13,28 @@
  1. drug_era 테이블 생성
 ***************************************/ 
   CREATE TABLE cohort_cdm.DRUG_ERA (
-     drug_era_id					NUMBER  NOT NULL , 
-     person_id							NUMBER NOT NULL ,
-     drug_concept_id				NUMBER  NOT NULL ,
-     drug_era_start_date			DATE  NOT NULL ,
-     drug_era_end_date				DATE NOT NULL ,
-     drug_exposure_count			NUMBER NULL, 
-	 gap_days						NUMBER NULL
+     drug_era_id					INTEGER	 identity(1,1)    NOT NULL , 
+     person_id						INTEGER     NOT NULL ,
+     drug_concept_id				INTEGER   NOT NULL ,
+     drug_era_start_date			DATE      NOT NULL ,
+     drug_era_end_date				DATE 	  NOT NULL ,
+     drug_exposure_count			INTEGER			NULL, 
+	 gap_days						INTEGER			NULL
 );
-
--- Generate ID using sequence and trigger
-CREATE SEQUENCE cohort_cdm.DRUG_ERA_seq START WITH 1 INCREMENT BY 1;
-
-CREATE OR REPLACE TRIGGER cohort_cdm.DRUG_ERA_seq_tr
-   BEFORE INSERT ON cohort_cdm.DRUG_ERA FOR EACH ROW
-   WHEN (NEW.drug_era_id IS NULL)
-  BEGIN
- SELECT cohort_cdm.DRUG_ERA_seq.NEXTVAL INTO :NEW.drug_era_id FROM DUAL;
-END;
-
-
 
 /**************************************
  2. 1단계: 필요 데이터 조회
 ***************************************/ 
 
---------------------------------------------cteDrugPreTarget 
+--------------------------------------------#cteDrugPreTarget 
 SELECT 
 	d.drug_exposure_id
 	, d.person_id
 	, c.concept_id AS ingredient_concept_id
 	, d.drug_exposure_start_date AS drug_exposure_start_date
 	, d.days_supply AS days_supply
-	, COALESCE(d.drug_exposure_end_date, d.days_supply * INTERVAL '1' DAY + d.drug_exposure_start_date, INTERVAL '1' DAY + drug_exposure_start_date) AS drug_exposure_end_date
+	, COALESCE(d.drug_exposure_end_date, last_day(d.days_supply, d.drug_exposure_start_date), last_day(1, drug_exposure_start_date)) AS drug_exposure_end_date
+    --, COALESCE(d.drug_exposure_end_date, DATEADD(DAY, d.days_supply, d.drug_exposure_start_date), DATEADD(DAY, 1, drug_exposure_start_date)) AS drug_exposure_end_date 원본코드
 into cteDrugPreTarget FROM drug_exposure d
 JOIN concept_ancestor ca 
 ON ca.descendant_concept_id = d.drug_concept_id
@@ -55,7 +44,7 @@ WHERE c.vocabulary_id = 'RxNorm'
 AND c.concept_class_ID = 'Ingredient';
 
 
---------------------------------------------cteDrugTarget1
+--------------------------------------------#cteDrugTarget1
 SELECT
 	drug_exposure_id
 	, person_id
@@ -63,15 +52,17 @@ SELECT
 	, drug_exposure_start_date
 	, days_supply
 	, drug_exposure_end_date
-	, drug_exposure_end_date - drug_exposure_start_date AS days_of_exposure ---Calculates the days of exposure to the drug so at the end we can subtract the SUM of these days from the total days in the era.
+	, datediff(day, drug_exposure_start_date, drug_exposure_end_date) AS days_of_exposure ---Calculates the days of exposure to the drug so at the end we can subtract the SUM of these days from the total days in the era.
 into cteDrugTarget1 FROM  cteDrugPreTarget;
 
 
---------------------------------------------cteEndDates1
+--------------------------------------------#cteEndDates1
 SELECT
 	person_id
 	, ingredient_concept_id
-	, interval '-30' day + event_date AS end_date -- unpad the end date
+	, last_day(event_date, 'yyyymmdd') AS end_date -- unpad the end date
+    
+    --, dateadd(day, -30, event_date) AS end_date
 into cteEndDates1 FROM
 (
 	SELECT
@@ -79,7 +70,7 @@ into cteEndDates1 FROM
 		, ingredient_concept_id
 		, event_date
 		, event_type
-		, MAX(start_ordinal) OVER FROM dual (PARTITION BY person_id, ingredient_concept_id ORDER BY event_date, event_type ROWS unbounded preceding) AS start_ordinal -- this pulls the current START down from the prior rows so that the NULLs from the END DATES will contain a value we can compare with
+		, MAX(start_ordinal) OVER (PARTITION BY person_id, ingredient_concept_id ORDER BY event_date, event_type ROWS unbounded preceding) AS start_ordinal -- this pulls the current START down from the prior rows so that the NULLs from the END DATES will contain a value we can compare with
 		, ROW_NUMBER() OVER (PARTITION BY person_id, ingredient_concept_id ORDER BY event_date, event_type) AS overall_ord -- this re-numbers the inner UNION so all rows are numbered ordered by the event date
 	FROM (
 		-- select the start dates, assigning a row number to each
@@ -97,7 +88,8 @@ into cteEndDates1 FROM
 		SELECT
 			person_id
 			, ingredient_concept_id
-			, interval '30' day +drug_exposure_end_date
+			, last_day(drug_exposure_end_date, 'yyyymmdd')
+            --, , dateadd(day,30,drug_exposure_end_date) 구분코드
 			, 1 AS event_type
 			, NULL
 		FROM cteDrugTarget1
@@ -106,7 +98,7 @@ into cteEndDates1 FROM
 WHERE (2 * e.start_ordinal) - e.overall_ord = 0;
 
 	
---------------------------------------------cteDrugExposureEnds1
+--------------------------------------------#cteDrugExposureEnds1
 SELECT 
 	   dt.person_id
 	   , dt.ingredient_concept_id as drug_concept_id
@@ -137,7 +129,7 @@ SELECT
 	, MIN(drug_exposure_start_date) AS drug_era_start_date
 	, drug_era_end_date
 	, COUNT(*) AS drug_exposure_count
-	, drug_era_end_date - MIN(drug_exposure_start_date) -SUM(days_of_exposure) AS gap_days
+	, DATEDIFF(DAY, MIN(drug_exposure_start_date),drug_era_end_date) -SUM(days_of_exposure) AS gap_days
 	/*, EXTRACT(EPOCH FROM (drug_era_end_date - MIN(drug_exposure_start_date)) - SUM(days_of_exposure))/86400 AS gap_day
 			  ---dividing by 86400 puts the integer in the "units" of days.
 			  ---There are no actual units on this, it is just an integer, but we want it to represent days and dividing by 86400 does that.*/
