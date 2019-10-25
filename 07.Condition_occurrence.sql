@@ -1,9 +1,9 @@
-/**************************************
+=/**************************************
  --encoding : UTF-8
- --Author: 이성원
- --Date: 2017.01.31
+ --Author: 고인석,박현서
+ --Date: 2019.08.27
  
-@bigdata : DB containing NHIS National Sample cohort DB
+@NHISDatabaseSchema : DB containing NHIS National Sample cohort DB
 @NHIS_JK: JK table in NHIS NSC
 @NHIS_20T: 20 table in NHIS NSC
 @NHIS_30T: 30 table in NHIS NSC
@@ -18,19 +18,20 @@
 /**************************************
  1. 테이블 생성
 ***************************************/ 
-CREATE TABLE CONDITION_OCCURRENCE@cohort_cdm ( 
-     condition_occurrence_id		NUMBER PRIMARY KEY, 
-     person_id						NUMBER NOT NULL , 
-     condition_concept_id			NUMBER NOT NULL , 
-     condition_start_date			DATE	NOT NULL , 
+CREATE TABLE cohort_cdm.CONDITION_OCCURRENCE ( 
+     condition_occurrence_id		NUMBER			PRIMARY KEY, 
+     person_id						INTEGER			NOT NULL , 
+     condition_concept_id			INTEGER			NOT NULL , 
+     condition_start_date			DATE			NOT NULL , 
      condition_end_date				DATE, 
-     condition_type_concept_id		NUMBER NOT NULL , 
-     stop_reason					VARCHAR2(20), 
-     provider_id					NUMBER, 
+     condition_type_concept_id		INTEGER			NOT NULL , 
+     stop_reason					VARCHAR(20), 
+     provider_id					INTEGER, 
      visit_occurrence_id			NUMBER, 
-     condition_source_value			VARCHAR2(50),
-	 condition_source_concept_id	VARCHAR2(50)
+     condition_source_value			VARCHAR(50),
+	 condition_source_concept_id	VARCHAR(50)
 );
+
 
 
 /**************************************
@@ -46,22 +47,19 @@ CREATE TABLE CONDITION_OCCURRENCE@cohort_cdm (
 	   2) condition_type_concept_id 값 확인 -> 유승찬 선생님
 ***************************************/ 
 
-INSERT INTO Condition_OCCURRENCE@cohort_cdm
+INSERT INTO cohort_cdm.CONDITION_OCCURRENCE 
 	(condition_occurrence_id, person_id, condition_concept_id, condition_start_date, condition_end_date,
 	condition_type_concept_id, stop_reason, provider_id, visit_occurrence_id, condition_source_value, 
 	condition_source_concept_id)
-SELECT * FROM
-	TO_NUMBER(to_char (m.master_seq) || to_char (ROW_NUMBER() OVER(partition BY key_seq, seq_no order by concept_id desc))) from dual as condition_occurrence_id,
+select 
+	to_number(m.master_seq || (ROW_NUMBER() OVER(partition BY key_seq, seq_no order by concept_id desc))) as condition_occurrence_id,
 	--ROW_NUMBER() OVER(partition BY key_seq, seq_no order by concept_id desc) AS rank, m.seq_no,
 	m.person_id as person_id,
 	n.concept_id as condition_concept_id,
-	convert(date, m.recu_fr_dt, 112) as condition_start_date,
+	to_date(m.recu_fr_dt, 'yyyymmdd') as condition_start_date,
 	m.visit_end_date as condition_end_date,
 	m.sick_order as condition_type_concept_id,
 	null as stop_reason,
-    
-    
-    
 	null as provider_id,
 	m.key_seq as visit_occurrence_id,
 	m.sick_sym as condition_source_value,
@@ -69,9 +67,9 @@ SELECT * FROM
 from (
 	select
 		a.master_seq, a.person_id, a.key_seq, a.seq_no, b.recu_fr_dt,
-		case when b.form_cd in ('02', '04', '06', '07', '10', '12') then b.vscn * INTERVAL '1' DAY(5)-1 + convert(date, b.recu_fr_dt, 112)) 
-			when b.form_cd in ('03', '05', '08', '09', '11', '13', '20', '21', 'ZZ') and b.in_pat_cors_type in ('11', '21', '31') then b.vscn * INTERVAL '1' DAY(5)-1 + convert(date, b.recu_fr_dt, 112))
-			else convert(date, b.recu_fr_dt, 112)
+		case when b.form_cd in ('02', '04', '06', '07', '10', '12') then to_date(b.recu_fr_dt, 'yyyymmdd') + b.vscn - 1 
+			when b.form_cd in ('03', '05', '08', '09', '11', '13', '20', '21', 'ZZ') and b.in_pat_cors_type in ('11', '21', '31') then to_date(b.recu_fr_dt, 'yyyymmdd') + b.vscn - 1
+            else to_date(b.recu_fr_dt, 'yyyymmdd')
 		end as visit_end_date,
 		c.sick_sym,
 		case when c.sick_sym=b.main_sick then '44786627' --primary condition
@@ -80,15 +78,15 @@ from (
 		end as sick_order,
 		case when b.sub_sick=c.sick_sym then 'Y' else 'N' end as sub_sick_yn
 	from (select master_seq, person_id, key_seq, seq_no from seq_master where source_table='140') a, 
-		@bigdata.@NHIS_20T b,
-		@bigdata.@NHIS_40T  c,
+		cohort_cdm.NHID_20T b,
+		cohort_cdm.NHID_40T  c,
 		observation_period d --추가
 	where a.person_id=b.person_id
 	and a.key_seq=b.key_seq
 	and a.key_seq=c.key_seq
 	and a.seq_no=c.seq_no
 	and b.person_id=d.person_id --추가
-	and convert(date, c.recu_fr_dt, 112) between d.observation_period_start_date and d.observation_period_end_date) as m, --추가
-	@cohort_cdm.@CONDITION_MAPPINGTABLE as n
+	and to_date(c.recu_fr_dt, 'yyyymmdd') between d.observation_period_start_date and d.observation_period_end_date as m, --추가
+	cohort_cdm.CONDITION_MAPPINGTABLE as n
 where m.sick_sym=n.kcdcode
-
+	  );
