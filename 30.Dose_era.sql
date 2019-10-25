@@ -1,9 +1,9 @@
-/**************************************
+\/**************************************
  --encoding : UTF-8
  --Author: OHDSI
   
-@NHISDatabaseSchema : DB containing NHIS National Sample cohort DB
-@cohort_cdm : DB for NHIS-NSC in CDM format
+cohort_cdm : DB containing NHIS National Sample cohort DB
+cohort_cdm : DB for NHIS-NSC in CDM format
  
  --Description: OHDSI에서 생성한 dose_era 생성 쿼리
  --Generating Table: DOSE_ERA
@@ -13,25 +13,14 @@
  1. dose_era 테이블 생성
 ***************************************/ 
  CREATE TABLE cohort_cdm.DOSE_ERA (
-     dose_era_id					NUMBER NOT NULL , 
-     person_id						NUMBER NOT NULL ,
-     drug_concept_id				NUMBER NOT NULL ,
-     unit_concept_id				NUMBER NOT NULL ,
-     dose_value						binary_double  NOT NULL ,
-     dose_era_start_date	DATE 	NOT NULL, 
-	 dose_era_end_date		DATE 	NOT NULL
+     dose_era_id					INTEGER	 identity(1,1)    NOT NULL , 
+     person_id						INTEGER     NOT NULL ,
+     drug_concept_id				INTEGER   NOT NULL ,
+     unit_concept_id				INTEGER      NOT NULL ,
+     dose_value						float  NOT NULL ,
+     dose_era_start_date			DATE 		NOT	NULL, 
+	 dose_era_end_date				DATE 		NOT	NULL
 );
-
--- Generate ID using sequence and trigger
-CREATE SEQUENCE cohort_cdm.DOSE_ERA_seq  START WITH 1 INCREMENT BY 1;
-
-CREATE OR REPLACE TRIGGER cohort_cdm.DOSE_ERA_seq_tr
-  BEFORE INSERT ON cohort_cdm.DOSE_ERA FOR EACH ROW
-  WHEN (NEW.dose_era_id IS NULL)
- BEGIN
- SELECT cohort_cdm.DOSE_ERA_seq.NEXTVAL INTO :NEW.dose_era_id FROM DUAL;
-END;
-/
 
 
 /**************************************
@@ -47,7 +36,10 @@ SELECT
 	, d.effective_drug_dose AS dose_value
 	, d.drug_exposure_start_date
 	, d.days_supply AS days_supply
-	, COALESCE(d.drug_exposure_end_date, d.days_supply * INTERVAL '1' DAY + d.drug_exposure_start_date, INTERVAL '1' DAY + drug_exposure_start_date) AS drug_exposure_end_date
+	, COALESCE(d.drug_exposure_end_date, last_day(d.days_supply, d.drug_exposure_start_date), last_day(drug_exposure_start_date,'yyyymmdd')) AS drug_exposure_end_date
+    
+    --, COALESCE(d.drug_exposure_end_date, DATEADD(DAY, d.days_supply, d.drug_exposure_start_date), DATEADD(DAY, 1, drug_exposure_start_date)) AS drug_exposure_end_date 원본코드
+    
 INTO cteDrugTarget 
 FROM drug_exposure d
 	 JOIN concept_ancestor ca ON ca.descendant_concept_id = d.drug_concept_id
@@ -62,7 +54,9 @@ SELECT
 	, ingredient_concept_id
 	, unit_concept_id
 	, dose_value
-	, INTERVAL '-30'  DAY + event_date AS end_date
+	, last_day(event_date, 'yyyymmdd') AS end_date
+    
+    --, DATEADD( DAY, -30, event_date) AS end_date 원본코드
 INTO cteEndDates FROM
 (
 	SELECT
@@ -72,7 +66,7 @@ INTO cteEndDates FROM
 		, dose_value
 		, event_date
 		, event_type
-		, MAX(start_ordinal) OVER FROM dual (PARTITION BY person_id, ingredient_concept_id, unit_concept_id, dose_value ORDER BY event_date, event_type ROWS unbounded preceding) AS start_ordinal
+		, MAX(start_ordinal) OVER (PARTITION BY person_id, ingredient_concept_id, unit_concept_id, dose_value ORDER BY event_date, event_type ROWS unbounded preceding) AS start_ordinal
 		, ROW_NUMBER() OVER (PARTITION BY person_id, ingredient_concept_id, unit_concept_id, dose_value ORDER BY event_date, event_type) AS overall_ord
 	FROM
 	(
@@ -92,14 +86,14 @@ INTO cteEndDates FROM
 			, ingredient_concept_id
 			, unit_concept_id
 			, dose_value
-			, INTERVAL '30' DAY(5) + drug_exposure_end_date AS drug_exposure_end_date
+			, last_day(drug_exposure_end_date,'yyyymmdd') AS drug_exposure_end_date
+            -- DATEADD(DAY, 30, drug_exposure_end_date) AS drug_exposure_end_date 원본코드
 			, 1 AS event_type
 			, NULL
 		FROM cteDrugTarget
 	) RAWDATA
 ) e
 WHERE (2 * e.start_ordinal) - e.overall_ord = 0;
-
 
 --------------------------------------------#cteDoseEraEnds
 SELECT
