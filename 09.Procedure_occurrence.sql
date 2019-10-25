@@ -1,16 +1,16 @@
 /**************************************
  --encoding : UTF-8
- --Author: 이성원
- --Date: 2017.02.13
+ --Author:고인석,박현서
+ --Date: 2019.09.04
  
-@bigdata : DB containing NHIS National Sample cohort DB
-@cohort_cdm : DB for NHIS-NSC in CDM format
-NHIS_JK: JK table in NHIS NSC
-NHIS_20T: 20 table in NHIS NSC
-NHIS_30T: 30 table in NHIS NSC
-NHIS_40T: 40 table in NHIS NSC
-NHIS_60T: 60 table in NHIS NSC
-NHIS_GJ: GJ table in NHIS NSC
+@NHISDatabaseSchema : DB containing NHIS National Sample cohort DB
+@ResultDatabaseSchema : DB for NHIS-NSC in CDM format
+@NHIS_JK: JK table in NHIS NSC
+@NHIS_20T: 20 table in NHIS NSC
+@NHIS_30T: 30 table in NHIS NSC
+@NHIS_40T: 40 table in NHIS NSC
+@NHIS_60T: 60 table in NHIS NSC
+@NHIS_GJ: GJ table in NHIS NSC
 @CONDITION_MAPPINGTABLE : mapping table between KCD and OMOP vocabulary
 @DRUG_MAPPINGTABLE : mapping table between EDI and OMOP vocabulary
 @PROCEDURE_MAPPINGTABLE : mapping table between Korean procedure and OMOP vocabulary
@@ -25,20 +25,20 @@ NHIS_GJ: GJ table in NHIS NSC
 ***************************************/ 
 -- 30T 변환 예상 건수(1:N 매핑 허용)
 select count(a.key_seq)
-from bigdata.NHIS_30T a, procedure_edi_mapped_20161007 b, bigdata.NHIS_20T c
+from cohort_cdm.NHID_30T a, procedure_edi_mapped_20161007 b, cohort_cdm.NHID_20T c
 where a.div_cd=b.sourcecode
 and a.key_seq=c.key_seq
 
 -- 참고) 30T 변환 예상 건수 (distinct 용어만 카운트)
 select count(a.key_seq)
-from bigdata.NHIS_30T a, bigdata.NHIS_20T b
+from cohort_cdm.NHID_30T a, cohort_cdm.NHID_20T b
 where a.key_seq=b.key_seq
 and a.div_cd in (select distinct sourcecode
 	from procedure_edi_mapped_20161007)
 	
 -- 참고) 30T 중 1:N 매핑 중복 건수
 select count(a.key_seq), sum(cnt)
-from bigdata.NHIS_30T a, 
+from cohort_cdm.NHID_30T a, 
 	(select sourcecode, count(sourcecode)-1 as cnt 
 	from procedure_edi_mapped_20161007 
 	group by sourcecode 
@@ -49,75 +49,75 @@ where a.div_cd=b.sourcecode
 ----------------------------------------
 -- 60T 변환 예상 건수(1:N 매핑 허용)
 select count(a.key_seq)
-from bigdata.[drug02_13_60T] a, procedure_edi_mapped_20161007 b, bigdata.NHIS_20T c
+from cohort_cdm.[drug02_13_60T] a, procedure_edi_mapped_20161007 b, cohort_cdm.NHID_20T c
 where a.div_cd=b.sourcecode
 and a.key_seq=c.key_seq
 
 -- 참고) 60T 변환 예상 건수 (distinct 용어만 카운트)
 select count(a.key_seq)
-from bigdata.[drug02_13_60T] a, bigdata.NHIS_20T b
+from cohort_cdm.[drug02_13_60T] a, cohort_cdm.NHID_20T b
 where a.key_seq=b.key_seq
 and a.div_cd in (select distinct sourcecode
 	from procedure_edi_mapped_20161007)
 
 -- 참고) 60T 중 1:N 매핑 중복 건수
 select count(a.key_seq), sum(cnt)
-from bigdata.[drug02_13_60T] a, 
+from cohort_cdm.[drug02_13_60T] a, 
 	(select sourcecode, count(sourcecode)-1 as cnt 
 	from procedure_edi_mapped_20161007 
 	group by sourcecode 
 	having count(sourcecode) > 1) b,
-	bigdata.NHIS_20T c
+	cohort_cdm.NHID_20T c
 where a.div_cd=b.sourcecode
 and a.key_seq=c.key_seq
 -- 1건
- 
+
+
 /**************************************
  2. 테이블 생성
 ***************************************/ 
-CREATE TABLE cohort_cdm.PROCEDURE_OCCURENCE( 
-     procedure_occurrence_id	NUMBER	PRIMARY KEY,
-     person_id						NUMBER	NOT NULL, 
-     procedure_concept_id			NUMBER	NOT NULL, 
-     procedure_date					DATE	NOT NULL, 
-     procedure_type_concept_id		NUMBER	NOT NULL,
-	 modifier_concept_id			NUMBER	NULL,
-	 quantity						NUMBER	NULL, 
-     provider_id					NUMBER	NULL, 
-     visit_occurrence_id			NUMBER	NULL, 
-     procedure_source_value			VARCHAR2(50)	 NULL,
-	 procedure_source_concept_id	NUMBER	NULL,
-	 qualifier_source_value			VARCHAR2(50)	 NULL
-    )
-;
---08이랑 같은 구조 
+CREATE TABLE cohort_cdm.PROCEDURE_OCCURRENCE ( 
+     procedure_occurrence_id		NUMBER			PRIMARY KEY, 
+     person_id						INTEGER			NOT NULL, 
+     procedure_concept_id			INTEGER			NOT NULL, 
+     procedure_date					DATE			NOT NULL, 
+     procedure_type_concept_id		INTEGER			NOT NULL,
+	 modifier_concept_id			INTEGER			NULL,
+	 quantity						INTEGER			NULL, 
+     provider_id					INTEGER			NULL, 
+     visit_occurrence_id			NUMBER			NULL, 
+     procedure_source_value			VARCHAR(50)		NULL,
+	 procedure_source_concept_id	INTEGER			NULL,
+	 qualifier_source_value			VARCHAR(50)		NULL
+    );
+
+
 /**************************************
  3. 30T를 이용하여 데이터 입력
 ***************************************/
-INSERT INTO cohort_cdm.PROCEDURE_OCCURRENCE
+INSERT INTO cohort_cdm.PROCEDURE_OCCURRENCE 
 	(procedure_occurrence_id, person_id, procedure_concept_id, procedure_date, procedure_type_concept_id, 
 	modifier_concept_id, quantity, provider_id, visit_occurrence_id, procedure_source_value, 
 	procedure_source_concept_id, qualifier_source_value)
 SELECT 
---여기부터
-	TO_NUMBER( TO_CHAR(a.master_seq) + TO_CHAR(row_number() over (partition by a.key_seq, a.seq_no order by b.concept_id))) as procedure_occurrence_id,
+	to_number(to_char(a.master_seq) || to_char(row_number() over (partition by a.key_seq, a.seq_no order by b.concept_id))) as procedure_occurrence_id,
 	a.person_id as person_id,
 	CASE WHEN b.concept_id IS NOT NULL THEN b.concept_id ELSE 0 END as procedure_concept_id,
-	TO_CHAR(a.recu_fr_dt, 112) as procedure_date,
+	to_char(a.recu_fr_dt, 112) as procedure_date,
 	45756900 as procedure_type_concept_id,
 	NULL as modifier_concept_id,
-	TO_NUMBER(a.dd_mqty_exec_freq) * TO_NUMBER(a.mdcn_exec_freq) * TO_NUMBER(a.dd_mqty_freq) as quantity,
+	to_float(a.dd_mqty_exec_freq) * to_float(a.mdcn_exec_freq) * to_float(a.dd_mqty_freq) as quantity,
 	NULL as provider_id,
 	a.key_seq as visit_occurrence_id,
 	a.div_cd as procedure_source_value,
 	null as procedure_source_concept_id,
 	null as qualifier_source_value
 FROM (SELECt x.key_seq, x.seq_no, x.recu_fr_dt, x.div_cd, 
-			case when x.mdcn_exec_freq is not null and TO_NUMBER(x.mdcn_exec_freq)=1 and cast(x.mdcn_exec_freq as float) > '0' then cast(x.mdcn_exec_freq as float) else 1 end as mdcn_exec_freq,
-			case when x.dd_mqty_exec_freq is not null and TO_NUMBER(x.dd_mqty_exec_freq)=1 and cast(x.dd_mqty_exec_freq as float) > '0' then cast(x.dd_mqty_exec_freq as float) else 1 end as dd_mqty_exec_freq,
-			case when x.dd_mqty_freq is not null and TO_NUMBER(x.dd_mqty_freq)=1 and cast(x.dd_mqty_freq as float) > '0' then cast(x.dd_mqty_freq as float) else 1 end as dd_mqty_freq,
+			case when x.mdcn_exec_freq is not null and REGEXP_INSTR(x.mdcn_exec_freq,'^[+-]?\d*(\.?\d*)$')=1 and cast(x.mdcn_exec_freq as float) > '0' then cast(x.mdcn_exec_freq as float) else 1 end as mdcn_exec_freq,
+			case when x.dd_mqty_exec_freq is not null and REGEXP_INSTR(x.dd_mqty_exec_freq,'^[+-]?\d*(\.?\d*)$')=1 and cast(x.dd_mqty_exec_freq as float) > '0' then cast(x.dd_mqty_exec_freq as float) else 1 end as dd_mqty_exec_freq,
+			case when x.dd_mqty_freq is not null and REGEXP_INSTR(x.dd_mqty_freq,'^[+-]?\d*(\.?\d*)$')=1 and cast(x.dd_mqty_freq as float) > '0' then cast(x.dd_mqty_freq as float) else 1 end as dd_mqty_freq,
 			y.master_seq, y.person_id
-	FROM bigdata.NHIS_30T x, 
+	FROM cohort_cdm.NHID_30T x, 
 		 (select master_seq, key_seq, seq_no, person_id from seq_master where source_table='130') y
 	WHERE x.key_seq=y.key_seq
 	AND x.seq_no=y.seq_no) a, procedure_EDI_mapped_20161007 b
@@ -127,32 +127,29 @@ WHERE a.div_cd=b.sourcecode
 /**************************************
  4. 60T를 이용하여 데이터 입력
 ***************************************/
-INSERT INTO cohort_cdm .PROCEDURE_OCCURRENCE
+INSERT INTO cohort_cdm.PROCEDURE_OCCURRENCE 
 	(procedure_occurrence_id, person_id, procedure_concept_id, procedure_date, procedure_type_concept_id, 
 	modifier_concept_id, quantity, provider_id, visit_occurrence_id, procedure_source_value, 
 	procedure_source_concept_id, qualifier_source_value)
 SELECT 
-	TO_NUMBER(TO_CHAR(a.master_seq) + TO_CHAR(row_number() over (partition by a.key_seq, a.seq_no order by b.concept_id))) as procedure_occurrence_id,
+	to_number(to_char(a.master_seq) || to_char(row_number() over (partition by a.key_seq, a.seq_no order by b.concept_id))) as procedure_occurrence_id,
 	a.person_id as person_id,
-	CASE 
-        WHEN b.concept_id IS NOT NULL THEN b.concept_id 
-            ELSE 0 
-            END as procedure_concept_id,
-	TO_CHAR(a.recu_fr_dt, 112) as procedure_date,
+	CASE WHEN b.concept_id IS NOT NULL THEN b.concept_id ELSE 0 END as procedure_concept_id,
+	to_char(a.recu_fr_dt, 112) as procedure_date,
 	45756900 as procedure_type_concept_id,
 	NULL as modifier_concept_id,
-	TO_NUMBER(a.dd_mqty_freq) * TO_NUMBER(a.dd_exec_freq) * TO_NUMBER(a.mdcn_exec_freq) as quantity,
+	to_float(a.dd_mqty_freq) * to_float(a.dd_exec_freq) * to_float(a.mdcn_exec_freq) as quantity,
 	NULL as provider_id,
 	a.key_seq as visit_occurrence_id,
 	a.div_cd as procedure_source_value,
 	null as procedure_source_concept_id,
 	null as qualifier_source_value
 FROM (SELECt x.key_seq, x.seq_no, x.recu_fr_dt, x.div_cd, 
-			case when x.mdcn_exec_freq is not null and TO_NUMBER(x.mdcn_exec_freq)=1 and cast(x.mdcn_exec_freq as float) > '0' then cast(x.mdcn_exec_freq as float) else 1 end as mdcn_exec_freq,
-			case when x.dd_exec_freq is not null and TO_NUMBER(x.dd_exec_freq)=1 and cast(x.dd_exec_freq as float) > '0' then cast(x.dd_exec_freq as float) else 1 end as dd_exec_freq,
-			case when x.dd_mqty_freq is not null and TO_NUMBER(x.dd_mqty_freq)=1 and cast(x.dd_mqty_freq as float) > '0' then cast(x.dd_mqty_freq as float) else 1 end as dd_mqty_freq,
+			case when x.mdcn_exec_freq is not null and REGEXP_INSTR(x.mdcn_exec_freq,'^[+-]?\d*(\.?\d*)$')=1 and cast(x.mdcn_exec_freq as float) > '0' then cast(x.mdcn_exec_freq as float) else 1 end as mdcn_exec_freq,
+			case when x.dd_exec_freq is not null and REGEXP_INSTR(x.dd_exec_freq,'^[+-]?\d*(\.?\d*)$')=1 and cast(x.dd_exec_freq as float) > '0' then cast(x.dd_exec_freq as float) else 1 end as dd_exec_freq,
+			case when x.dd_mqty_freq is not null and REGEXP_INSTR(x.dd_mqty_freq,'^[+-]?\d*(\.?\d*)$')=1 and cast(x.dd_mqty_freq as float) > '0' then cast(x.dd_mqty_freq as float) else 1 end as dd_mqty_freq,
 			y.master_seq, y.person_id
-	FROM bigdata.NHIS_60T x, 
+	FROM cohort_cdm.NHID_60T x, 
 		 (select master_seq, key_seq, seq_no, person_id from seq_master where source_table='160') y
 	WHERE x.key_seq=y.key_seq
 	AND x.seq_no=y.seq_no) a, cohort_cdm.PROCEDURE_MAPPINGTABLE b
