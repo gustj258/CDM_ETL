@@ -1,6 +1,6 @@
 /**************************************
  --encoding : UTF-8
- --Author: 고인석,
+ --Author: 고인석,박현서
  --Date: 2019.08.14
  
  cohort_cdm : DB containing NHIS National Sample cohort DB
